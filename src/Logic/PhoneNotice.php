@@ -27,29 +27,44 @@ class PhoneNotice implements Icommand
                         `warnigs` a
                     LEFT JOIN projects_waring_setting b ON a.project_id = b.project_id
                     WHERE
-                        
+
                         a.id > (
                             SELECT
                                 IFNULL(MAX(warnigs_id),0)
                             FROM
+                            
                                 phonenotice
-                        ) order by a.id asc limit 1;";
+                        ) order by a.id asc limit 10;";
+
+//            $sql = "SELECT
+//                         a.*,b.id as projects_waring_setting_id,b.remind_time,b.percentage,b.notice_start_time,b.notice_end_time,notice_phone
+//                    FROM
+//                        `warnigs` a
+//                    LEFT JOIN projects_waring_setting b ON a.project_id = b.project_id
+//                    WHERE
+//
+//                        a.id =323 order by a.id asc limit 1;";
             $rs = $db->getAll($sql);
 
-            if($rs) {
-                $rs=$rs[0];
-                $notNotice=new NotNotice($rs);
-                list($is_send,$no_send_reason)=$notNotice->init()->CheckData()->isPercentage()->noBetweenNoticeTime()->frequency()->notice()->getResult();
+            if(!empty($rs)){
+                foreach ($rs as $k=>$v){
+                    if($v) {
+                        CliHelper::cliEcho($v["id"]." start ..");
+                        $notNotice=new NotNotice($v);
+                        list($is_send,$no_send_reason)=$notNotice->init()->CheckData()->isPercentage()->noBetweenNoticeTime()->frequency()->notice()->getResult();
 
-                $data=$this->TurnDataToMysql($rs,$is_send,$no_send_reason);
-                $this->saveToMysql($data);
-            }else{
-                CliHelper::cliEcho(" no data sleep 1s");
-                sleep(1);
+                        $data=$this->TurnDataToMysql($v,$is_send,$no_send_reason);
+
+                        $this->saveToMysql($data);
+                    }else{
+                        CliHelper::cliEcho(" no data sleep 1s");
+                        sleep(1);
+                    }
+                    CliHelper::cliEcho("sleep 100ms");
+                    usleep(100);
+                }
             }
-            CliHelper::cliEcho("sleep 100ms");
-            usleep(100);
-
+//           exit;
         }
     }
     function saveToMysql($data)
@@ -68,6 +83,7 @@ class PhoneNotice implements Icommand
         $result["projectsetting_kz_json"]=json_encode($data);
         $result["is_send"]=$is_send;
         $result["project_id"]=$data["project_id"];
+        $result["point_id"]=$data["point_id"];
         $result["no_send_reason"]=$no_send_reason;
         $result["created_at"]=date('Y-m-d H:i:s',time());
         return $result;

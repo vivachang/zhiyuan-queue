@@ -7,8 +7,11 @@
  */
 
 namespace Sprovider90\Zhiyuanqueue\Logic;
+use Sprovider90\Zhiyuanqueue\Factory\Config;
 use Sprovider90\Zhiyuanqueue\Helper\CliHelper;
 use Sprovider90\Zhiyuanqueue\Model\Orm;
+
+
 /**
  * Class Breakdown
  * @package Sprovider90\Zhiyuanqueue\Logic
@@ -17,78 +20,96 @@ use Sprovider90\Zhiyuanqueue\Model\Orm;
 
 class Breakdown implements Icommand
 {
-    function run(){
+    protected $client;
+    protected $db;
+    function initRedisMysql(){
+        $redisConfig=Config::get("Redis");
+        $this->client = new \Predis\Client('tcp://'.$redisConfig["host"].':'.$redisConfig["port"]);
 
-        $doeds = array();
-        $dirpath = "./../testdata/yingjianbreakdown/";
-        //$rundate=date('Ymd')="20200710";
-        $rundate="20200710";
-        $dirpath .= $rundate;
-
-        while (true) {
-            if(date('Ymd')>$rundate){
-//                CliHelper::cliEcho($rundate."WarningSms任务处理完成");
-//                exit();
-            }
-            if (!is_dir($dirpath)) {
-                CliHelper::cliEcho("当前目录下，目录 " . $dirpath . " 不存在 线程休眠1秒");
-                usleep(1000 * 1000);
-                continue;
-
-            }
-            $allfiles = scandir($dirpath);
-
-            $files = array_diff($allfiles, $doeds);//差集
-            $doeds = $allfiles;
-
-            foreach ($files as $file) {
-                $file = $dirpath . '/' . $file;
-                if (is_file($file)) {
-
-                    $start_time = microtime(true);
-                    $filecontent=file_get_contents($file);
-                    $json_arr=json_decode($filecontent,true);
-                    if(empty($json_arr)){
-                        CliHelper::cliEcho($file." content not is jsonData");
-                    }
-                    $this->deal($json_arr);
-                    $endTime = microtime(true);
-                    $runTime = round($endTime - $start_time,6) * 1000;
-                    CliHelper::cliEcho("runtime-".$runTime);
-                }
-
-            }
-            CliHelper::cliEcho("no new file come");
-            usleep(1000 * 100);
-        }
+        $this->db=new Orm();
 
     }
-    public function deal($yingjian)
-    {
-        $data=[];
-        if(!empty($yingjian)){
-            foreach ($yingjian as $k=>$v) {
-                $tmp=[];
-                $tmp["project_id"]=$v["projectId"];
-                $tmp["device_id"]=$v["deviceId"];
-                $tmp["type"]=$v["breakdownType"];
-                $tmp["happen_time"]=$v["timestamp"];
-                $tmp["created_at"]=date('Y-m-d H:i:s',time());
-                $data[]=$tmp;
-            }
+//"event":"数据分类id（event字段序号）",
+//"deviceId": "设备id",
+//"monitorId": "监测点id",
+//"projectId": "项目id",
+//"timestamp": "2020-07-15 12:30:00",//事件发生时间
 
-            $this->saveToMysql($data);
+    function test(){
+        $this->client ->lpush('breakdown','{
+            "monitorId":"39",
+            "breakdownType":"2",
+            "breakdownInfo":"数据异常",
+            "updateTime":"2020-09-14 01:00:02",
+            "projectId":"29",
+            "deviceId":"A103",
+            "status":1,
+            "timestamp":"2020-09-14 16:50:00.000"
+        }');
+    }
+    function run (){
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        $this->initRedisMysql();
+        //$this->test();
+        while (true) {
+
+            $str=$this->client ->lpop('breakdown');
+            if (!empty($str)) {
+                $data=json_decode($str,true);
+
+                if(empty($data)){
+                    CliHelper::cliEcho("data not is json");
+                }
+                $this->deal($data);
+            }
+            CliHelper::cliEcho("sleep 1000ms");
+            usleep(1000);
+
         }
 
-       return ;
+        flush();
+        ob_flush();
+    }
+
+
+    public function deal($yingjian)
+    {
+
+        if(!empty($yingjian)){
+            if($yingjian["breakdownType"]==2){
+                $this->toMessage($yingjian["deviceId"]);
+            }
+            $tmp=[];
+            $tmp["project_id"]=$yingjian["projectId"];
+            $tmp["device_id"]=$yingjian["deviceId"];
+            $tmp["type"]=$yingjian["breakdownType"];
+            $tmp["happen_time"]=$yingjian["timestamp"];
+            $tmp["created_at"]=date('Y-m-d H:i:s',time());
+
+            $this->saveToMysql($tmp);
+        }
+
+       return $this;
     }
     function saveToMysql($data)
     {
-
         if(!empty($data)){
-            $db=new Orm();
-            $db->insert("breakdowns",$data);
+            $this->db->insert("breakdowns",$data);
         }
 
     }
+    function toMessage($deviceId)
+    {
+        $arr=[];
+        $arr["stage"]=1002;
+        $arr["dev_no"]=$deviceId;
+        $arr["time"]=date('Y-m-d H:i:s',time());
+        $this->client ->rpush('messagelist',json_encode($arr));
+        return ;
+
+    }
+
+    
 }

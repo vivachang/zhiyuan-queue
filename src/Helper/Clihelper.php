@@ -9,7 +9,7 @@
 namespace Sprovider90\Zhiyuanqueue\Helper;
 
 
-class Clihelper
+class CliHelper
 {
 
     /**
@@ -26,7 +26,7 @@ class Clihelper
      */
     public static function cliEcho($message)
     {
-        fwrite(STDOUT, $message . PHP_EOL);
+        fwrite(STDOUT, date("Y-m-d H:i:s",time())." ".$message . PHP_EOL);
         self::cliFlush();
 
 
